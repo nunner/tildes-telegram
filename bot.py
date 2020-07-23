@@ -3,6 +3,7 @@ import tildee
 import telegram
 import re
 import pickle
+import time
 
 def clean(raw_html):
     return re.sub(r"<.*?>|b'|\\n|\s{2,}|\\|'$", "", raw_html)
@@ -36,11 +37,6 @@ def post(board):
                         telegram.InlineKeyboardButton(text="Link", url=topic.link),
                         telegram.InlineKeyboardButton(text=str(topic.num_comments) + " Comments", url=post_link)]
             else:
-                print(topic.content_html)
-                print("\n")
-                print(clean(topic.content_html))
-                print("\n")
-
                 text += "<b>Link:</b> " + post_link + "\n\n"
                 text += clean(topic.content_html)
 
@@ -48,18 +44,23 @@ def post(board):
                         telegram.InlineKeyboardButton(text=str(topic.num_comments) + " Comments", url=post_link)]
 
             reply_markup = telegram.InlineKeyboardMarkup(build_menu(button_list, n_cols = 2))
-            bot.sendMessage(chat_id=cfg.settings["bot"]["channel"],
+            try:
+                bot.sendMessage(chat_id=cfg.settings["bot"]["channel"],
                     text=text,
                     parse_mode=telegram.ParseMode.HTML,
                     reply_markup=reply_markup)
-
+            except Exception:
+                pass
+            time.sleep(4)
             post_list.append(topic.id36)
 
-post_list = pickle.load(open(posts.p, "rb"))
+post_list = pickle.load(open("posts.p", "rb")) 
 
 client = tildee.TildesClient(username = cfg.settings["user"]["name"], password=cfg.settings["user"]["pass"])
 bot = telegram.Bot(token=cfg.settings["bot"]["token"])
+
 for board in cfg.settings["boards"]:
     post(board)
 
 pickle.dump(post_list, open("posts.p", "wb"))
+print("I'm here")
