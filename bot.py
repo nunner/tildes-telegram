@@ -63,4 +63,3 @@ for board in cfg.settings["boards"]:
     post(board)
 
 pickle.dump(post_list, open("posts.p", "wb"))
-print("I'm here")
