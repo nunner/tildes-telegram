@@ -69,7 +69,7 @@ def post(topic):
                 telegram.InlineKeyboardButton(text=str(comment_count) + " Comments", url=comments)]
         else:
             soup = BeautifulSoup(topic["summary"], "html.parser")
-            text += "<b>Link:</b> " + link + "\n\n"
+            text += "<b>Link:</b> " + comments + "\n\n"
             text += soup.find("p").getText()
 
             button_list = [
