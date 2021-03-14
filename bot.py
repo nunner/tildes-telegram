@@ -1,12 +1,31 @@
-import conf as cfg
-import tildee
-import telegram
-import re
-import pickle
-import time
+#!/usr/bin/python3
 
-def clean(raw_html):
-    return re.sub(r"<.*?>|b'|\\n|\s{2,}|\\|'$", "", raw_html)
+import conf as cfg
+import feedparser
+import telegram
+import pickle
+import re
+import time
+import os.path as path
+from bs4 import BeautifulSoup
+
+def get_votes(summary):
+    p = re.compile("<p>Votes: [0-9]*<\/p>")
+    matches = p.findall(summary)
+    if matches[0]:
+        matches[0] = matches[0].replace("<p>Votes: ", "").replace("</p>", "")
+        return int(matches[0]) 
+    else:
+        return 0
+
+def get_comments(summary):
+    p = re.compile("<p>Comments: [0-9]*<\/p>")
+    matches = p.findall(summary)
+    if matches[0]:
+        matches[0] = matches[0].replace("<p>Comments: ", "").replace("</p>", "")
+        return int(matches[0]) 
+    else:
+        return 0
 
 def build_menu(buttons,
         n_cols,
@@ -19,47 +38,61 @@ def build_menu(buttons,
         menu.append([footer_buttons])
     return menu
 
-def post(board):
-    topics = client.fetch_topic_listing("~" + board)
+def send(text, buttons):
+    reply_markup = telegram.InlineKeyboardMarkup(build_menu(buttons, n_cols = 2))
+    try:
+        bot.sendMessage(chat_id=cfg.settings["bot"]["channel"],
+                        text=text,
+                        parse_mode=telegram.ParseMode.HTML,
+                        reply_markup=reply_markup)
+    except Exception:
+        pass
 
-    for topic in topics:
-        if topic.num_votes > cfg.settings["limit"] and topic.id36 not in post_list:
-            post_link = "https://tild.es/" + str(topic.id36);
-            button_list = []
+def post(topic):
+    vote_count = get_votes(topic["summary"])
+    comment_count = get_comments(topic["summary"])
 
-            text = "<b>" + topic.title + "</b>\n\n"
+    if vote_count > cfg.settings["limit"] and topic["id"] not in post_list:
+        button_list = []
 
-            if topic.link:
-                text += "<b>Link:</b> " + topic.link + "\n"
-                text += "<b>Comments:</b> " + post_link + "\n\n"
+        comments = "https://tild.es/" + topic["id"].split("/")[4]
+        link = topic["link"]
 
-                button_list = [
-                        telegram.InlineKeyboardButton(text="Link", url=topic.link),
-                        telegram.InlineKeyboardButton(text=str(topic.num_comments) + " Comments", url=post_link)]
-            else:
-                text += "<b>Link:</b> " + post_link + "\n\n"
-                text += clean(topic.content_html)
+        text = "<b>" + topic["title"] + "</b>\n\n"
 
-                button_list = [
-                        telegram.InlineKeyboardButton(text=str(topic.num_comments) + " Comments", url=post_link)]
+        if topic["id"] != topic["link"]:
+            text += "<b>Link:</b> " + link + "\n"
+            text += "<b>Comments:</b> " + comments + "\n\n"
 
-            reply_markup = telegram.InlineKeyboardMarkup(build_menu(button_list, n_cols = 2))
-            try:
-                bot.sendMessage(chat_id=cfg.settings["bot"]["channel"],
-                    text=text,
-                    parse_mode=telegram.ParseMode.HTML,
-                    reply_markup=reply_markup)
-            except Exception:
-                pass
-            time.sleep(4)
-            post_list.append(topic.id36)
+            button_list = [
+                telegram.InlineKeyboardButton(text="Link", url=link),
+                telegram.InlineKeyboardButton(text=str(comment_count) + " Comments", url=comments)]
+        else:
+            soup = BeautifulSoup(topic["summary"], "html.parser")
+            text += "<b>Link:</b> " + link + "\n\n"
+            text += soup.find("p").getText()
 
-post_list = pickle.load(open("posts.p", "rb")) 
+            button_list = [
+                    telegram.InlineKeyboardButton(text=str(comment_count) + " Comments", url=comments)]
 
-client = tildee.TildesClient(username = cfg.settings["user"]["name"], password=cfg.settings["user"]["pass"])
-bot = telegram.Bot(token=cfg.settings["bot"]["token"])
+        send(text, button_list)
+        post_list.append(topic["id"])
 
-for board in cfg.settings["boards"]:
-    post(board)
-
-pickle.dump(post_list, open("posts.p", "wb"))
+if __name__ == "__main__":
+    if path.exists("posts.p"):
+        post_list = pickle.load(open("posts.p", "rb")) 
+    else:
+        post_list = []
+    
+    bot = telegram.Bot(token=cfg.settings["bot"]["token"])
+    
+    feeds = [];
+    for board in cfg.settings["boards"]:
+        url = "https://tildes.net/~" + board + "/topics.atom";
+        feeds.append(feedparser.parse(url))
+    
+    for feed in feeds:
+        for topic in feed.entries:
+            post(topic)
+    
+    pickle.dump(post_list, open("posts.p", "wb"))
